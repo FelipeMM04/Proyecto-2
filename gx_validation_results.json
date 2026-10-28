@@ -1,0 +1,77 @@
+{
+    "suite_rnt_raw": [
+        {
+            "dq_rule_id": "DQ-01",
+            "expectation": "expect_column_values_to_be_between",
+            "params": {
+                "column": "numero_de_empleados",
+                "min_value": 0
+            },
+            "success": true,
+            "unexpected_count": 0,
+            "unexpected_percent": 0.0,
+            "severity": "Critical",
+            "pipeline_action": "CONTINUE"
+        },
+        {
+            "dq_rule_id": "DQ-02",
+            "expectation": "expect_column_pair_values_A_to_be_greater_than_B",
+            "params": {
+                "column_A": "numero_de_camas",
+                "column_B": "numero_de_habitaciones",
+                "or_equal": true
+            },
+            "success": false,
+            "unexpected_count": 6694,
+            "unexpected_percent": 0.9850665442323426,
+            "severity": "Warning",
+            "pipeline_action": "WARN_AND_LOG"
+        }
+    ],
+    "suite_dane_raw": [
+        {
+            "dq_rule_id": "DQ-04",
+            "expectation": "expect_column_value_lengths_to_equal",
+            "params": {
+                "column": "codigo_departamento",
+                "value": 2
+            },
+            "success": false,
+            "unexpected_count": 1184,
+            "unexpected_percent": 14.313346228239846,
+            "severity": "Critical",
+            "pipeline_action": "STOP_BRANCH"
+        },
+        {
+            "dq_rule_id": "DQ-05",
+            "expectation": "expect_column_values_to_be_between",
+            "params": {
+                "column": "tasa_desempleo",
+                "min_value": 0.0,
+                "max_value": 100.0
+            },
+            "success": true,
+            "unexpected_count": 0,
+            "unexpected_percent": 0.0,
+            "severity": "High",
+            "pipeline_action": "CONTINUE"
+        }
+    ],
+    "suite_dw_prepared": [
+        {
+            "dq_rule_id": "DQ-03",
+            "expectation": "expect_compound_columns_to_be_unique",
+            "params": {
+                "column_list": [
+                    "codigo_rnt",
+                    "anio"
+                ]
+            },
+            "success": false,
+            "unexpected_count": 677140,
+            "unexpected_percent": 99.64564681229288,
+            "severity": "Critical",
+            "pipeline_action": "APPLY_DAX_DISTINCTCOUNT"
+        }
+    ]
+}
