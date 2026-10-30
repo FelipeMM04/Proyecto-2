@@ -493,3 +493,44 @@ El panel analítico final en Power BI consulta directamente el Data Warehouse en
 | :--- | :--- | :--- | :--- |
 | **R6** | • `fact_indicadores_departamentales.tasa_informalidad`<br>• `fact_turismo_anual.codigo_rnt` (Recuento Distinto)<br>• `dim_ubicacion.departamento`<br>• **Relación:** Varios a Varios / Filtrado en dirección única desde `dim_ubicacion` hacia `fact_indicadores_departamentales` mediante `codigo_departamento`. | **Gráfico Combinado (Columnas Agrupadas y Línea):**<br>• **Eje X:** `departamento`<br>• **Eje Y de Columnas:** `Total PST` (`DISTINCTCOUNT(codigo_rnt)`)<br>• **Eje Y de Línea:** `Promedio Tasa de Informalidad` (`AVERAGE(tasa_informalidad)`) | **Correlación Socioeconómica Entrecruzada:** Conecta los datos internos del registro turístico (RNT) con las métricas oficiales de informalidad laboral del DANE. Revela si los departamentos con alta infraestructura turística realmente promueven el empleo formal o dependen en gran medida del trabajo informal. |
 | **R7** | • `fact_indicadores_departamentales.tasa_desempleo`<br>• `fact_turismo_anual.numero_de_camas`, `numero_de_habitaciones`<br>• `dim_ubicacion.departamento`<br>• **Medida DAX:** `Cobertura_Turistica = SUM(numero_de_camas) + SUM(numero_de_habitaciones)` | **Gráfico de Dispersión con Cuadrantes Analíticos:**<br>• **Detalles:** `departamento`<br>• **Eje X:** `Cobertura_Turistica`<br>• **Eje Y:** `Promedio Tasa de Desempleo` (`AVERAGE(tasa_desempleo)`)<br>• **Líneas de Referencia:** Promedio del Eje X y Promedio del Eje Y. | **Evaluación de Impacto Macroeconómico (ODS 8):** Demuestra cómo la capacidad de alojamiento turístico regional interactúa con el desempleo a nivel departamental. El análisis de cuadrantes aísla las regiones de alta capacidad que absorben mano de obra local de aquellas vulnerables que requieren intervenciones focalizadas de política pública. |
+
+---
+
+## 23. Setup y ejecución
+
+Requisitos: Docker + Docker Compose v2.
+
+```bash
+cp .env.example .env
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"   # pegar en AIRFLOW__CORE__FERNET_KEY
+# 1) Fuente primaria: ya incluida en data/source/RNT_20260915.csv.gz (RNT de datos.gov.co, corte 2026-09-15, 679,548 filas).
+#    Prueba de humo sintetica: python scripts/make_sample_data.py data/source/rnt_sample.csv
+# 2) R6: ya configurado (data/source/PPED-AreaMun-2018-2042_VP.xlsx, poblacion DANE). R7: sin dataset (docs/api_source.md)
+docker compose up -d --build
+# UI: http://localhost:8080 (sin login en modo desarrollo) · DW: localhost:5433
+scripts/run_reliability_tests.sh A        # Test A
+scripts/run_reliability_tests.sh B        # Test B (falla Critical)
+scripts/run_reliability_tests.sh C        # Test C (rerun) y luego C_after
+```
+Sin Docker (desarrollo): `pip install -r requirements-dev.txt && pytest tests && PYTHONPATH=src python tests/e2e_local.py`.
+Perfilamiento: `python scripts/run_profiling.py` · Reglas: `python scripts/generate_rules_doc.py`.
+Fallas controladas (`fault_injection`): `api_null_keys`, `primary_drop_column`, `primary_negative_employees`.
+
+Estructura: `dags/` (solo orquestación) · `src/etl/` (extracción, validación, transformación, carga) · `gx/` (catálogo de reglas) · `sql/` · `tests/` · `docs/` · `data/` (local, ignorado por git).
+
+## Hallazgos sobre la fuente primaria real (RNT_20260915.csv.gz, 679 548 filas)
+- **El CSV escribe los enteros ≥ 1000 con punto de miles** (`CODIGO_RNT = "1.008"`). Leído como decimal y truncado, **245 646 prestadores colapsan en 428**: exactamente lo que tiene la `dim_prestador` de la Primera Entrega, cuyo R4 queda por tanto mal. Aquí se normaliza (T02a) y se vigila (DQ-P04, DQ-P06).
+- Con la lectura correcta: 0 duplicados en `(codigo_rnt, anio)`, empleo máximo 5 478, 1 852 159 empleos acumulados.
+- 137 360 filas con código de municipio de 4 dígitos (cero inicial perdido); 22 con código `1` = `(FUERA DEL PAIS)` (registros del exterior, a cuarentena); 2 758 (0.41 %) con prefijo municipal ≠ departamento; 6 541 (0.96 %) con camas < habitaciones.
+- **Mojibake**: `OCAÃ‘A`, `PEÃ‘OL`… en 10 577 filas de municipio y 44 407 de razón social; se repara en T01b y se vigila con DQ-P07.
+- **Integración con DANE (datos reales):** 7 034 de 7 097 pares municipio-año (99.1 %) encuentran población; las localidades de Bogotá quedan sin población (limitación).
+- Detalle y correcciones al trabajo previo del equipo: [`docs/quality.md`](docs/quality.md), [`docs/equipo_integracion.md`](docs/equipo_integracion.md).
+
+---
+
+## 24. Supuestos y limitaciones (infraestructura)
+- `docker-compose.yaml` **no se pudo ejecutar** en el entorno de construcción (sin Docker); sí se verificó el DAG con Airflow 3.1.8 (`dags test`), PostgreSQL embebido y API mock. Validar el stack Docker antes de capturar evidencia.
+- Las pruebas usaron CSV sintético y API mock; umbrales y reglas son una **propuesta** que debe contrastarse con el profiling real.
+- Autenticación de Airflow: `SimpleAuthManager` con todos administradores (solo local).
+- Las fuentes son snapshots completos; por eso la carga es reemplazo atómico, no incremental.
+- La API depende de un tercero: conservar evidencia previa (`data/raw/api/<batch>`) para la defensa.
